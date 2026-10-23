@@ -1,0 +1,1361 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+
+<!-- 1. Cargar el archivo de configuración ANTES del script principal -->
+<script src="videos.js"></script>
+<title>VideoApp</title>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+<style>
+/* ==================== RESET Y BASE ==================== */
+* { margin:0; padding:0; box-sizing:border-box; user-select:none; -webkit-tap-highlight-color:transparent; }
+html, body { height:100%; width:100%; overflow:hidden; background:#000; color:#fff; font-family:system-ui,-apple-system,sans-serif; }
+.material-symbols-outlined { font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24; }
+
+/* ==================== LAYOUT PRINCIPAL ==================== */
+#app { position:relative; width:100vw; height:100vh; background:#000; overflow:hidden; }
+
+/* HEADER: LOGO + PERFIL */
+#header {
+    position:absolute; top:0; left:0; right:0; z-index:50;
+    display:flex; justify-content:space-between; align-items:center;
+    padding:15px 20px; padding-top:max(15px, env(safe-area-inset-top));
+    pointer-events:none;
+}
+#logo {
+    pointer-events:auto;
+    font-size:22px; font-weight:800; letter-spacing:-0.5px;
+    color:#fff; text-shadow:0 2px 8px rgba(0,0,0,0.8);
+    display:flex; align-items:center; gap:6px;
+}
+#logo .material-symbols-outlined { color:#ff003c; font-size:28px; font-variation-settings:'FILL' 1; }
+#btn-profile {
+    pointer-events:auto; cursor:pointer;
+    width:44px; height:44px; border-radius:50%;
+    background:rgba(0,0,0,0.5); backdrop-filter:blur(10px);
+    display:flex; align-items:center; justify-content:center;
+    border:1px solid rgba(255,255,255,0.1);
+    transition:transform 0.2s;
+}
+#btn-profile:active { transform:scale(0.9); }
+#btn-profile .material-symbols-outlined { color:#fff; font-size:24px; }
+
+/* ==================== REPRODUCTOR ==================== */
+#video-container { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:#000; }
+#player {
+    width:100%; height:100%; object-fit:cover;
+    background:#000;
+}
+
+/* POSTER (mismo para todos los videos) */
+#poster-bg {
+    position:absolute; inset:0;
+    background-size:cover; background-position:center;
+    z-index:1; pointer-events:none;
+    transition:opacity 0.3s;
+}
+#poster-bg.hidden { opacity:0; }
+
+/* ==================== GESTOS (capa invisible) ==================== */
+#gesture-overlay { position:absolute; inset:0; z-index:10; touch-action:none; }
+
+/* Zonas de feedback visual al tocar */
+.touch-feedback {
+    position:absolute; top:50%; transform:translateY(-50%);
+    width:30%; height:60%;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,0.3); color:#fff; font-size:24px; font-weight:600;
+    opacity:0; pointer-events:none; border-radius:20px;
+}
+.touch-feedback.left { left:5%; }
+.touch-feedback.right { right:5%; }
+.touch-feedback.show { animation:touchPulse 0.4s ease-out; }
+@keyframes touchPulse { 0%{opacity:0;transform:translateY(-50%) scale(0.8);} 30%{opacity:1;transform:translateY(-50%) scale(1);} 100%{opacity:0;transform:translateY(-50%) scale(1);} }
+
+/* ==================== LOADER XVIDEOS STYLE ==================== */
+#loader {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:90px; height:90px;
+    background:rgba(255,255,255,0.15); backdrop-filter:blur(4px);
+    border-radius:12px; z-index:30;
+    overflow:hidden; display:none;
+}
+#loader.active { display:block; }
+#loader-fill {
+    position:absolute; bottom:0; left:0; right:0; height:0%;
+    background:#ff003c; transition:height 0.2s linear;
+}
+#loader-text {
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:16px;
+    text-shadow:0 1px 3px rgba(0,0,0,0.8);
+    z-index:2;
+}
+
+/* ==================== TOASTS ==================== */
+#toast-container {
+    position:absolute; bottom:75px; left:0; right:0;
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+    pointer-events:none; z-index:40;
+}
+.toast {
+    background:rgba(0,0,0,0.85); backdrop-filter:blur(10px);
+    padding:8px 18px; border-radius:20px;
+    font-size:14px; font-weight:500;
+    opacity:0; transform:translateY(20px);
+    animation:toastIn 1.4s ease-out forwards;
+    border:1px solid rgba(255,255,255,0.1);
+}
+@keyframes toastIn {
+    0%{opacity:0;transform:translateY(20px);}
+    15%{opacity:1;transform:translateY(0);}
+    85%{opacity:1;transform:translateY(0);}
+    100%{opacity:0;transform:translateY(-20px);}
+}
+
+/* ==================== PROGRESS BAR ==================== */
+#progress-wrapper {
+    position:absolute; bottom:55px; left:15px; right:15px;
+    height:3px; background:rgba(255,255,255,0.25); border-radius:2px;
+    z-index:20; cursor:pointer; transition:height 0.15s;
+}
+#progress-wrapper:hover, #progress-wrapper.active { height:6px; }
+#buffer-bar { position:absolute; inset:0 auto 0 0; background:rgba(255,255,255,0.7); width:0%; border-radius:2px; pointer-events:none; }
+#progress-bar { position:absolute; inset:0 auto 0 0; background:#ff003c; width:0%; border-radius:2px; pointer-events:none; }
+#progress-thumb {
+    position:absolute; top:50%; left:0%; transform:translate(-50%,-50%);
+    width:12px; height:12px; background:#fff; border-radius:50%;
+    opacity:0; transition:opacity 0.15s;
+    pointer-events:none; box-shadow:0 1px 4px rgba(0,0,0,0.5);
+}
+#progress-wrapper:hover #progress-thumb, #progress-wrapper.active #progress-thumb { opacity:1; }
+
+/* ==================== BOTONES LATERALES ==================== */
+.side-buttons {
+    position:absolute; right:12px; bottom:110px;
+    display:flex; flex-direction:column; gap:22px; z-index:30;
+}
+.btn-action {
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+    color:#fff; font-size:11px; font-weight:500; cursor:pointer;
+    text-shadow:0 1px 3px rgba(0,0,0,0.8);
+}
+.btn-action .material-symbols-outlined {
+    font-size:34px;
+    transition:transform 0.15s;
+}
+.btn-action:active .material-symbols-outlined { transform:scale(0.85); }
+.btn-action.liked .material-symbols-outlined {
+    color:#ff003c;
+    font-variation-settings:'FILL' 1;
+    animation:heartPop 0.3s ease-out;
+}
+@keyframes heartPop { 0%{transform:scale(1);} 50%{transform:scale(1.3);} 100%{transform:scale(1);} }
+
+/* Doble tap corazón gigante */
+#big-heart {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%) scale(0);
+    font-size:120px; color:#ff003c; pointer-events:none; z-index:35;
+    font-variation-settings:'FILL' 1;
+}
+#big-heart.show { animation:bigHeart 0.8s ease-out; }
+@keyframes bigHeart {
+    0%{transform:translate(-50%,-50%) scale(0);opacity:0;}
+    30%{transform:translate(-50%,-50%) scale(1.2);opacity:1;}
+    60%{transform:translate(-50%,-50%) scale(1);opacity:1;}
+    100%{transform:translate(-50%,-50%) scale(1.5);opacity:0;}
+}
+
+/* ==================== MODALES ==================== */
+.modal-overlay {
+    position:fixed; inset:0; background:rgba(0,0,0,0.75); backdrop-filter:blur(8px);
+    z-index:200; display:none; align-items:center; justify-content:center;
+    animation:fadeIn 0.2s;
+}
+.modal-overlay.active { display:flex; }
+@keyframes fadeIn { from{opacity:0;} to{opacity:1;} }
+
+.modal {
+    background:#1a1a1a; border-radius:16px;
+    width:90%; max-width:500px; max-height:85vh;
+    overflow:hidden; display:flex; flex-direction:column;
+    border:1px solid rgba(255,255,255,0.08);
+    animation:modalIn 0.25s cubic-bezier(0.16,1,0.3,1);
+}
+@keyframes modalIn { from{transform:translateY(30px);opacity:0;} to{transform:translateY(0);opacity:1;} }
+
+.modal-header {
+    padding:18px 20px; border-bottom:1px solid rgba(255,255,255,0.08);
+    display:flex; justify-content:space-between; align-items:center;
+}
+.modal-title { font-size:18px; font-weight:700; }
+.modal-close {
+    background:rgba(255,255,255,0.08); border:none; color:#fff;
+    width:32px; height:32px; border-radius:50%; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+}
+.modal-close:active { background:rgba(255,255,255,0.15); }
+
+.modal-body {
+    padding:20px; overflow-y:auto; flex:1;
+}
+.modal-body::-webkit-scrollbar { width:6px; }
+.modal-body::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.2); border-radius:3px; }
+
+/* ==================== MODAL PERFIL (MENÚ) ==================== */
+.menu-list { display:flex; flex-direction:column; gap:4px; }
+.menu-item {
+    padding:14px 16px; border-radius:10px; cursor:pointer;
+    display:flex; align-items:center; gap:14px;
+    transition:background 0.15s;
+}
+.menu-item:hover, .menu-item:active { background:rgba(255,255,255,0.06); }
+.menu-item .material-symbols-outlined { font-size:24px; color:#ff003c; }
+.menu-item-label { font-size:15px; font-weight:500; flex:1; }
+.menu-item .arrow { color:rgba(255,255,255,0.4); font-size:20px; }
+
+/* Toggle switch */
+.toggle {
+    position:relative; width:44px; height:24px;
+    background:rgba(255,255,255,0.15); border-radius:12px;
+    cursor:pointer; transition:background 0.2s;
+}
+.toggle.on { background:#ff003c; }
+.toggle::after {
+    content:''; position:absolute; top:2px; left:2px;
+    width:20px; height:20px; background:#fff; border-radius:50%;
+    transition:transform 0.2s;
+}
+.toggle.on::after { transform:translateX(20px); }
+
+/* ==================== MODAL COMPARTIR ==================== */
+.share-ad-slot {
+    background:#0a0a0a; border:1px dashed rgba(255,255,255,0.1);
+    border-radius:10px; padding:15px; margin-bottom:16px;
+    min-height:90px; text-align:center;
+    color:rgba(255,255,255,0.3); font-size:12px;
+    display:flex; align-items:center; justify-content:center;
+}
+.share-url-box {
+    display:flex; gap:8px; margin-bottom:14px;
+}
+.share-url-box input {
+    flex:1; background:#0a0a0a; border:1px solid rgba(255,255,255,0.1);
+    color:#fff; padding:10px 12px; border-radius:8px;
+    font-size:12px; font-family:monospace;
+}
+.share-actions { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+.share-btn {
+    background:rgba(255,255,255,0.08); border:none; color:#fff;
+    padding:10px; border-radius:8px; cursor:pointer; font-size:13px;
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    transition:background 0.15s;
+}
+.share-btn:active { background:rgba(255,255,255,0.15); }
+.share-btn .material-symbols-outlined { font-size:22px; color:#ff003c; }
+
+/* ==================== LISTAS DE VIDEOS ==================== */
+.video-list { display:flex; flex-direction:column; gap:8px; }
+.video-list-item {
+    background:#0a0a0a; border-radius:10px; padding:10px;
+    display:flex; gap:10px; align-items:center; cursor:pointer;
+    transition:background 0.15s;
+}
+.video-list-item:hover { background:#141414; }
+.video-list-item .thumb {
+    width:80px; height:50px; background:#222; border-radius:6px;
+    background-size:cover; background-position:center; flex-shrink:0;
+}
+.video-list-item .info { flex:1; min-width:0; }
+.video-list-item .name {
+    font-size:13px; font-weight:500;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.video-list-item .meta { font-size:11px; color:rgba(255,255,255,0.5); margin-top:2px; }
+.video-list-item .action-btn {
+    background:rgba(255,255,255,0.08); border:none; color:#fff;
+    padding:6px 10px; border-radius:6px; cursor:pointer; font-size:12px;
+}
+.empty-state { text-align:center; padding:40px 20px; color:rgba(255,255,255,0.5); font-size:14px; }
+
+/* ==================== MODAL RESPALDO ==================== */
+.backup-checkboxes { display:flex; flex-direction:column; gap:10px; margin-bottom:16px; }
+.checkbox-row {
+    display:flex; align-items:center; gap:10px; padding:10px;
+    background:#0a0a0a; border-radius:8px; cursor:pointer;
+}
+.checkbox-row input[type=checkbox] { width:18px; height:18px; accent-color:#ff003c; }
+.checkbox-row label { font-size:14px; cursor:pointer; flex:1; }
+
+.backup-input {
+    width:100%; background:#0a0a0a; border:1px solid rgba(255,255,255,0.1);
+    color:#fff; padding:10px 12px; border-radius:8px;
+    font-size:14px; margin-bottom:12px;
+}
+.backup-btns { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.btn-primary {
+    background:#ff003c; border:none; color:#fff;
+    padding:12px; border-radius:8px; cursor:pointer;
+    font-weight:600; font-size:14px;
+}
+.btn-primary:active { background:#d60032; }
+.btn-secondary {
+    background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.1);
+    color:#fff; padding:12px; border-radius:8px; cursor:pointer;
+    font-weight:500; font-size:14px;
+}
+
+/* ==================== INTERSTITIAL AD ==================== */
+#interstitial {
+    position:fixed; inset:0; background:rgba(0,0,0,0.95); z-index:300;
+    display:none; align-items:center; justify-content:center;
+    flex-direction:column;
+}
+#interstitial.active { display:flex; }
+#interstitial .ad-slot {
+    width:90%; max-width:400px; min-height:250px;
+    background:#1a1a1a; border-radius:10px;
+    display:flex; align-items:center; justify-content:center;
+    color:rgba(255,255,255,0.3); font-size:13px;
+}
+#skip-btn {
+    margin-top:20px; background:rgba(255,255,255,0.1);
+    border:1px solid rgba(255,255,255,0.2); color:#fff;
+    padding:10px 24px; border-radius:20px; cursor:pointer;
+    font-size:13px; font-weight:500;
+}
+#skip-btn:disabled { opacity:0.5; cursor:not-allowed; }
+</style>
+</head>
+<body>
+
+<div id="app">
+    <!-- HEADER -->
+    <div id="header">
+        <div id="logo">
+            <span class="material-symbols-outlined">play_circle</span>
+            
+        </div>
+        <div id="btn-profile">
+            <span class="material-symbols-outlined">person</span>
+        </div>
+    </div>
+
+    <!-- VIDEO -->
+    <div id="video-container">
+        <div id="poster-bg"></div>
+        <video id="player" playsinline preload="metadata"></video>
+        <div id="gesture-overlay"></div>
+
+        <div class="touch-feedback left" id="fb-left">
+            <span class="material-symbols-outlined">replay_5</span>
+        </div>
+        <div class="touch-feedback right" id="fb-right">
+            <span class="material-symbols-outlined">forward_5</span>
+        </div>
+
+        <div id="loader">
+            <div id="loader-fill"></div>
+            <div id="loader-text">0%</div>
+        </div>
+
+        <div id="toast-container"></div>
+        <span id="big-heart" class="material-symbols-outlined">favorite</span>
+
+        <div id="progress-wrapper">
+            <div id="buffer-bar"></div>
+            <div id="progress-bar"></div>
+            <div id="progress-thumb"></div>
+        </div>
+
+        <div class="side-buttons">
+            <div class="btn-action" id="btn-like">
+                <span class="material-symbols-outlined">favorite</span>
+                <span>Like</span>
+            </div>
+            <div class="btn-action" id="btn-hide">
+                <span class="material-symbols-outlined">not_interested</span>
+                <span>No ver</span>
+            </div>
+            <div class="btn-action" id="btn-share">
+                <span class="material-symbols-outlined">share</span>
+                <span>Compartir</span>
+            </div>
+            <div class="btn-action" id="btn-report">
+                <span class="material-symbols-outlined">report</span>
+                <span>Roto</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== MODAL COMPARTIR ==================== -->
+<div class="modal-overlay" id="modal-share">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">Compartir</div>
+            <button class="modal-close" onclick="closeModal('modal-share')">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="share-ad-slot" id="ad-slot-share">
+                <!-- AQUÍ VA EL CÓDIGO DEL ANUNCIO (ExoClick/Clickadu) -->
+                Espacio para anuncio 300x250
+            </div>
+            <div class="share-url-box">
+                <input type="text" id="share-url" readonly>
+                <button class="share-btn" onclick="copyShareUrl()">
+                    <span class="material-symbols-outlined">content_copy</span>
+                    Copiar
+                </button>
+            </div>
+            <div class="share-actions">
+                <button class="share-btn" onclick="nativeShare()">
+                    <span class="material-symbols-outlined">share</span>
+                    Compartir
+                </button>
+                <button class="share-btn" onclick="downloadCurrent()">
+                    <span class="material-symbols-outlined">download</span>
+                    Descargar
+                </button>
+                <button class="share-btn" onclick="openInNewTab()">
+                    <span class="material-symbols-outlined">open_in_new</span>
+                    Abrir
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== MODAL PERFIL (MENÚ PRINCIPAL) ==================== -->
+<div class="modal-overlay" id="modal-profile">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">Perfil</div>
+            <button class="modal-close" onclick="closeModal('modal-profile')">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="menu-list">
+                <div class="menu-item" onclick="openLikedModal()">
+                    <span class="material-symbols-outlined">favorite</span>
+                    <span class="menu-item-label">Videos que me gustaron</span>
+                    <span class="material-symbols-outlined arrow">chevron_right</span>
+                </div>
+                <div class="menu-item" onclick="openHiddenModal()">
+                    <span class="material-symbols-outlined">not_interested</span>
+                    <span class="menu-item-label">Videos para no volver a ver</span>
+                    <span class="material-symbols-outlined arrow">chevron_right</span>
+                </div>
+                <div class="menu-item" onclick="openSettingsModal()">
+                    <span class="material-symbols-outlined">settings</span>
+                    <span class="menu-item-label">Configuración</span>
+                    <span class="material-symbols-outlined arrow">chevron_right</span>
+                </div>
+                <div class="menu-item" onclick="openBackupModal()">
+                    <span class="material-symbols-outlined">backup</span>
+                    <span class="menu-item-label">Respaldos</span>
+                    <span class="material-symbols-outlined arrow">chevron_right</span>
+                </div>
+                <div class="menu-item" onclick="openInfoModal()">
+                    <span class="material-symbols-outlined">info</span>
+                    <span class="menu-item-label">Información</span>
+                    <span class="material-symbols-outlined arrow">chevron_right</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== MODAL ME GUSTARON ==================== -->
+<div class="modal-overlay" id="modal-liked">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">Me gustaron (<span id="liked-count">0</span>)</div>
+            <button class="modal-close" onclick="closeModal('modal-liked')">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="modal-body" id="liked-list"></div>
+    </div>
+</div>
+
+<!-- ==================== MODAL NO VER ==================== -->
+<div class="modal-overlay" id="modal-hidden">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">No volver a ver (<span id="hidden-count">0</span>)</div>
+            <button class="modal-close" onclick="closeModal('modal-hidden')">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="modal-body" id="hidden-list"></div>
+    </div>
+</div>
+
+<!-- ==================== MODAL CONFIGURACIÓN ==================== -->
+<div class="modal-overlay" id="modal-settings">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">Configuración</div>
+            <button class="modal-close" onclick="closeModal('modal-settings')">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="menu-list">
+                <div class="menu-item" onclick="toggleSetting('mute_global', this)">
+                    <span class="material-symbols-outlined">volume_off</span>
+                    <span class="menu-item-label">Silenciar todos los videos</span>
+                    <div class="toggle" id="toggle-mute"></div>
+                </div>
+                <div class="menu-item" onclick="toggleSetting('autoplay_next', this)">
+                    <span class="material-symbols-outlined">autoplay</span>
+                    <span class="menu-item-label">Reproducir siguiente al terminar</span>
+                    <div class="toggle" id="toggle-autoplay"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== MODAL RESPALDO ==================== -->
+<div class="modal-overlay" id="modal-backup">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">Respaldo de datos</div>
+            <button class="modal-close" onclick="closeModal('modal-backup')">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:13px;color:rgba(255,255,255,0.6);margin-bottom:14px;">Selecciona qué datos incluir en tu respaldo. Se pedirá una contraseña para cifrar/descifrar.</p>
+            <div class="backup-checkboxes">
+                <label class="checkbox-row">
+                    <input type="checkbox" id="bk-likes" checked>
+                    <span>Videos que me gustaron</span>
+                </label>
+                <label class="checkbox-row">
+                    <input type="checkbox" id="bk-hidden" checked>
+                    <span>Videos para no volver a ver</span>
+                </label>
+                <label class="checkbox-row">
+                    <input type="checkbox" id="bk-broken" checked>
+                    <span>Enlaces rotos</span>
+                </label>
+            </div>
+            <input type="password" class="backup-input" id="bk-password" placeholder="Contraseña para cifrar">
+            <div class="backup-btns">
+                <button class="btn-primary" onclick="exportBackup()">Exportar</button>
+                <button class="btn-secondary" onclick="document.getElementById('import-file').click()">Importar</button>
+                <input type="file" id="import-file" accept=".enc,.json,.txt" style="display:none" onchange="importBackup(event)">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== MODAL INFO ==================== -->
+<div class="modal-overlay" id="modal-info">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">Información</div>
+            <button class="modal-close" onclick="closeModal('modal-info')">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:14px;line-height:1.6;margin-bottom:12px;">
+                <strong>Tu privacidad es prioridad.</strong>
+            </p>
+            <p style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.75);margin-bottom:10px;">
+                Los datos <strong>no se recopilan</strong> en ningún servidor. Toda la información (me gusta, videos ocultos, enlaces rotos) se almacena <strong>únicamente en tu dispositivo</strong> usando <code>localStorage</code>.
+            </p>
+            <p style="font-size:13px;line-height:1.6;color:rgba(255,255,255,0.75);margin-bottom:10px;">
+                Solo usted sabe y ve qué videos le gustan. Al limpiar los datos del navegador, todo se pierde (por eso recomendamos usar los respaldos).
+            </p>
+            <p style="font-size:12px;line-height:1.6;color:rgba(255,255,255,0.5);margin-top:16px;">
+                Versión 1.0 · Hecho con ❤
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== REPRODUCTOR EN MODAL (para listas) ==================== -->
+<div class="modal-overlay" id="modal-player">
+    <div style="width:100%;height:100%;background:#000;display:flex;flex-direction:column;">
+        <div style="padding:15px;display:flex;justify-content:space-between;align-items:center;z-index:10;">
+            <div id="mp-title" style="font-weight:600;"></div>
+            <button class="modal-close" onclick="closeModal('modal-player')">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div style="flex:1;position:relative;" id="mp-video-wrap">
+            <video id="mini-player" playsinline controls style="width:100%;height:100%;object-fit:contain;"></video>
+            <div id="gesture-overlay-mini" style="position:absolute;inset:0;z-index:5;touch-action:none;"></div>
+        </div>
+        <div style="padding:10px 15px;text-align:center;color:rgba(255,255,255,0.6);font-size:12px;">
+            Desliza ← → para cambiar entre videos de esta lista
+        </div>
+    </div>
+</div>
+
+<!-- ==================== ANUNCIO INTERSTITIAL ==================== -->
+<div id="interstitial">
+    <div class="ad-slot" id="ad-slot-interstitial">
+        <!-- AQUÍ VA EL CÓDIGO DEL ANUNCIO INTERSTITIAL -->
+        Espacio para anuncio intersticial 400x400
+    </div>
+    <button id="skip-btn" disabled>Saltar en <span id="skip-count">5</span>s</button>
+</div>
+
+<script>
+// ================================================================
+// CONFIGURACIÓN - MODIFICA ESTAS CONSTANTES
+// ================================================================
+
+
+
+// =========================================================
+// ESTADO GLOBAL
+// ============================================================
+let allVideos = [];
+let allVideosMeta = []; // {url, host, path, index}
+for(let host in videoData) {
+    videoData[host].forEach((path, i) => {
+        const url = `https://${host}/${path}`;
+        allVideosMeta.push({ url, host, path, index: allVideos.length });
+        allVideos.push(url);
+    });
+}
+
+let currentVideoIndex = -1;
+let historyStack = [];
+let historyPointer = -1;
+let videoCounter = 0; // Para anuncio cada 5 videos
+const AD_INTERVAL = 5;
+
+// Elementos DOM
+const player = document.getElementById('player');
+const posterBg = document.getElementById('poster-bg');
+const overlay = document.getElementById('gesture-overlay');
+const loader = document.getElementById('loader');
+const loaderFill = document.getElementById('loader-fill');
+const loaderText = document.getElementById('loader-text');
+const progressBar = document.getElementById('progress-bar');
+const bufferBar = document.getElementById('buffer-bar');
+const progressWrapper = document.getElementById('progress-wrapper');
+const progressThumb = document.getElementById('progress-thumb');
+const toastContainer = document.getElementById('toast-container');
+const btnLike = document.getElementById('btn-like');
+const btnHide = document.getElementById('btn-hide');
+const btnShare = document.getElementById('btn-share');
+const btnReport = document.getElementById('btn-report');
+const fbLeft = document.getElementById('fb-left');
+const fbRight = document.getElementById('fb-right');
+const bigHeart = document.getElementById('big-heart');
+
+// ================================================================
+// STORAGE
+// ================================================================
+function getLocal(key) {
+    try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+}
+function setLocal(key, data) {
+    localStorage.setItem(key, JSON.stringify(data));
+}
+function getSetting(key, def = 'false') {
+    return localStorage.getItem(key) || def;
+}
+
+// ================================================================
+// TOASTS
+// ================================================================
+function showToast(msg) {
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.textContent = msg;
+    toastContainer.appendChild(t);
+    setTimeout(() => t.remove(), 1500);
+}
+
+// ================================================================
+// PÓSTER
+// ================================================================
+posterBg.style.backgroundImage = `url("${POSTER_URL}")`;
+player.setAttribute('poster', POSTER_URL);
+
+// ================================================================
+// REPRODUCCIÓN E HISTORIAL
+// ================================================================
+function getRandomValidIndex() {
+    const noVer = getLocal('no_ver');
+    const rotos = getLocal('rotos');
+    const valid = [];
+    for(let i = 0; i < allVideos.length; i++) {
+        if(!noVer.includes(i) && !rotos.includes(i)) valid.push(i);
+    }
+    if(valid.length === 0) {
+        showToast('No hay videos disponibles');
+        return -1;
+    }
+    return valid[Math.floor(Math.random() * valid.length)];
+}
+
+function playVideo(index, addToHistory = true) {
+    if(index === -1 || !allVideos[index]) return;
+
+    if(addToHistory) {
+        historyStack = historyStack.slice(0, historyPointer + 1);
+        historyStack.push(index);
+        historyPointer = historyStack.length - 1;
+    }
+
+    currentVideoIndex = index;
+    const meta = allVideosMeta[index];
+
+    // Mostrar poster, se ocultará cuando cargue
+    posterBg.classList.remove('hidden');
+    loader.classList.add('active');
+    loaderFill.style.height = '0%';
+    loaderText.textContent = '0%';
+
+    player.src = meta.url;
+    player.muted = getSetting('mute_global') === 'true';
+    player.play().catch(() => {});
+
+    // Estado del like
+    const likes = getLocal('me_gustan');
+    btnLike.classList.toggle('liked', likes.includes(index));
+
+    precargarSiguiente();
+}
+
+function precargarSiguiente() {
+    const nextIdx = getRandomValidIndex();
+    if(nextIdx !== -1 && nextIdx !== currentVideoIndex) {
+        const link = document.createElement('link');
+        link.rel = 'prefetch';
+        link.href = allVideos[nextIdx];
+        const existing = document.querySelector(`link[data-prefetch="${nextIdx}"]`);
+        if(existing) existing.remove();
+        link.dataset.prefetch = nextIdx;
+        document.head.appendChild(link);
+    }
+}
+
+function playNext() {
+    // ANUNCIO CADA 5 VIDEOS
+    videoCounter++;
+    if(videoCounter % AD_INTERVAL === 0) {
+        showInterstitial(() => {
+            continueNext();
+        });
+    } else {
+        continueNext();
+    }
+}
+
+function continueNext() {
+    if(historyPointer < historyStack.length - 1) {
+        historyPointer++;
+        playVideo(historyStack[historyPointer], false);
+    } else {
+        playVideo(getRandomValidIndex());
+    }
+}
+
+function playPrev() {
+    if(historyPointer > 0) {
+        historyPointer--;
+        playVideo(historyStack[historyPointer], false);
+    } else {
+        showToast('Primer video');
+    }
+}
+
+// ================================================================
+// EVENTOS DEL VIDEO
+// ================================================================
+player.addEventListener('timeupdate', () => {
+    if(player.duration) {
+        const p = (player.currentTime / player.duration) * 100;
+        progressBar.style.width = p + '%';
+        progressThumb.style.left = p + '%';
+    }
+});
+
+player.addEventListener('progress', () => {
+    if(player.buffered.length > 0 && player.duration) {
+        const end = player.buffered.end(player.buffered.length - 1);
+        const p = (end / player.duration) * 100;
+        bufferBar.style.width = p + '%';
+        loaderFill.style.height = p + '%';
+        loaderText.textContent = Math.round(p) + '%';
+        if(p > 95) loader.classList.remove('active');
+    }
+});
+
+player.addEventListener('loadeddata', () => {
+    posterBg.classList.add('hidden');
+});
+
+player.addEventListener('playing', () => {
+    posterBg.classList.add('hidden');
+});
+
+player.addEventListener('error', () => {
+    const rotos = getLocal('rotos');
+    if(!rotos.includes(currentVideoIndex)) {
+        rotos.push(currentVideoIndex);
+        setLocal('rotos', rotos);
+    }
+    showToast('Enlace roto, siguiente...');
+    setTimeout(() => playNext(), 300);
+});
+
+player.addEventListener('ended', () => {
+    if(getSetting('autoplay_next') === 'true') playNext();
+    else showToast('Video finalizado');
+});
+
+// ================================================================
+// PROGRESS BAR (CLICK + DRAG)
+// ================================================================
+let isDraggingProgress = false;
+
+function seekFromEvent(e) {
+    const rect = progressWrapper.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const p = Math.max(0, Math.min(1, x / rect.width));
+    if(player.duration) player.currentTime = p * player.duration;
+}
+
+progressWrapper.addEventListener('click', seekFromEvent);
+progressWrapper.addEventListener('touchstart', (e) => {
+    isDraggingProgress = true;
+    progressWrapper.classList.add('active');
+    seekFromEvent(e);
+}, {passive:true});
+progressWrapper.addEventListener('touchmove', (e) => {
+    if(isDraggingProgress) seekFromEvent(e);
+}, {passive:true});
+progressWrapper.addEventListener('touchend', () => {
+    isDraggingProgress = false;
+    progressWrapper.classList.remove('active');
+});
+
+// ================================================================
+// GESTOS TÁCTILES
+// ================================================================
+let touchStartY = 0, touchStartX = 0, touchStartTime = 0;
+let longPressTimer = null;
+let tapCount = 0, tapTimer = null;
+let isSwiping = false;
+
+function showFeedback(el) {
+    el.classList.remove('show');
+    void el.offsetWidth; // force reflow
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 400);
+}
+
+overlay.addEventListener('touchstart', (e) => {
+    touchStartY = e.touches[0].clientY;
+    touchStartX = e.touches[0].clientX;
+    touchStartTime = Date.now();
+    isSwiping = false;
+
+    longPressTimer = setTimeout(() => {
+        player.playbackRate = 2.0;
+        showToast('2x ⏩');
+    }, 1500);
+}, {passive:true});
+
+overlay.addEventListener('touchmove', (e) => {
+    const dy = Math.abs(e.touches[0].clientY - touchStartY);
+    const dx = Math.abs(e.touches[0].clientX - touchStartX);
+    if(dy > 10 || dx > 10) {
+        if(longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        isSwiping = true;
+    }
+}, {passive:true});
+
+overlay.addEventListener('touchend', (e) => {
+    if(longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    if(player.playbackRate === 2.0) player.playbackRate = 1.0;
+
+    if(isSwiping) {
+        const dy = e.changedTouches[0].clientY - touchStartY;
+        const dt = Date.now() - touchStartTime;
+        if(Math.abs(dy) > 50 && dt < 500) {
+            if(dy < 0) playNext(); else playPrev();
+        }
+        return;
+    }
+
+    const x = e.changedTouches[0].clientX;
+    const w = window.innerWidth;
+    const zone = x / w;
+
+    tapCount++;
+    if(tapCount === 1) {
+        tapTimer = setTimeout(() => {
+            // Single tap
+            if(zone < 0.33) {
+                player.currentTime = Math.max(0, player.currentTime - 5);
+                showFeedback(fbLeft);
+                showToast('-5s');
+            } else if(zone > 0.66) {
+                player.currentTime = Math.min(player.duration, player.currentTime + 5);
+                showFeedback(fbRight);
+                showToast('+5s');
+            } else {
+                if(player.paused) { player.play(); showToast('▶'); }
+                else { player.pause(); showToast('❚❚'); }
+            }
+            tapCount = 0;
+        }, 250);
+    } else if(tapCount === 2) {
+        clearTimeout(tapTimer);
+        toggleLike(true);
+        tapCount = 0;
+    }
+});
+
+// Soporte mouse (PC)
+overlay.addEventListener('mousedown', (e) => {
+    touchStartX = e.clientX;
+    touchStartY = e.clientY;
+    touchStartTime = Date.now();
+    longPressTimer = setTimeout(() => {
+        player.playbackRate = 2.0;
+        showToast('2x ⏩');
+    }, 1500);
+});
+overlay.addEventListener('mouseup', (e) => {
+    if(longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    if(player.playbackRate === 2.0) player.playbackRate = 1.0;
+
+    const dt = Date.now() - touchStartTime;
+    const dx = e.clientX - touchStartX;
+    if(Math.abs(dx) > 10) return; // fue drag
+
+    const w = window.innerWidth;
+    const zone = e.clientX / w;
+
+    tapCount++;
+    if(tapCount === 1) {
+        tapTimer = setTimeout(() => {
+            if(zone < 0.33) {
+                player.currentTime = Math.max(0, player.currentTime - 5);
+                showFeedback(fbLeft);
+                showToast('-5s');
+            } else if(zone > 0.66) {
+                player.currentTime = Math.min(player.duration, player.currentTime + 5);
+                showFeedback(fbRight);
+                showToast('+5s');
+            } else {
+                if(player.paused) player.play(); else player.pause();
+            }
+            tapCount = 0;
+        }, 250);
+    } else if(tapCount === 2) {
+        clearTimeout(tapTimer);
+        toggleLike(true);
+        tapCount = 0;
+    }
+});
+
+// Atajos de teclado
+document.addEventListener('keydown', (e) => {
+    if(document.querySelector('.modal-overlay.active')) return;
+    switch(e.key) {
+        case ' ': e.preventDefault(); if(player.paused) player.play(); else player.pause(); break;
+        case 'ArrowLeft': player.currentTime -= 5; showFeedback(fbLeft); showToast('-5s'); break;
+        case 'ArrowRight': player.currentTime += 5; showFeedback(fbRight); showToast('+5s'); break;
+        case 'ArrowUp': e.preventDefault(); playNext(); break;
+        case 'ArrowDown': e.preventDefault(); playPrev(); break;
+        case 'l': case 'L': toggleLike(); break;
+        case 'm': case 'M': player.muted = !player.muted; showToast(player.muted ? '🔇' : '🔊'); break;
+    }
+});
+
+// ================================================================
+// LIKE / NO VER / REPORTAR
+// ================================================================
+function toggleLike(isDoubleTap = false) {
+    let likes = getLocal('me_gustan');
+    const idx = currentVideoIndex;
+    if(likes.includes(idx)) {
+        likes = likes.filter(i => i !== idx);
+        btnLike.classList.remove('liked');
+        showToast('Like eliminado');
+    } else {
+        likes.push(idx);
+        btnLike.classList.add('liked');
+        showToast('¡Te gustó!');
+        if(isDoubleTap) {
+            bigHeart.classList.remove('show');
+            void bigHeart.offsetWidth;
+            bigHeart.classList.add('show');
+        }
+    }
+    setLocal('me_gustan', likes);
+}
+
+btnLike.addEventListener('click', () => toggleLike());
+
+btnHide.addEventListener('click', () => {
+    let noVer = getLocal('no_ver');
+    if(!noVer.includes(currentVideoIndex)) {
+        noVer.push(currentVideoIndex);
+        setLocal('no_ver', noVer);
+        showToast('No volverás a ver este video');
+        playNext();
+    }
+});
+
+btnReport.addEventListener('click', () => {
+    const rotos = getLocal('rotos');
+    if(!rotos.includes(currentVideoIndex)) {
+        rotos.push(currentVideoIndex);
+        setLocal('rotos', rotos);
+        showToast('Reportado como roto');
+        playNext();
+    }
+});
+
+// ================================================================
+// MODALES (ABRIR / CERRAR)
+// ================================================================
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+document.querySelectorAll('.modal-overlay').forEach(m => {
+    m.addEventListener('click', (e) => {
+        if(e.target === m) m.classList.remove('active');
+    });
+});
+
+document.getElementById('btn-profile').addEventListener('click', () => openModal('modal-profile'));
+btnShare.addEventListener('click', openShareModal);
+
+// ================================================================
+// COMPARTIR
+// ================================================================
+function openShareModal() {
+    if(currentVideoIndex === -1) return;
+    const meta = allVideosMeta[currentVideoIndex];
+    const shareUrl = `${location.origin}${location.pathname}?v=${encodeURIComponent(meta.url)}`;
+    document.getElementById('share-url').value = shareUrl;
+    openModal('modal-share');
+}
+
+function copyShareUrl() {
+    const input = document.getElementById('share-url');
+    input.select();
+    navigator.clipboard.writeText(input.value).then(() => {
+        showToast('URL copiada');
+    }).catch(() => {
+        document.execCommand('copy');
+        showToast('URL copiada');
+    });
+}
+
+function nativeShare() {
+    const url = document.getElementById('share-url').value;
+    if(navigator.share) {
+        navigator.share({ title:'Video', url }).catch(()=>{});
+    } else {
+        copyShareUrl();
+    }
+}
+
+function downloadCurrent() {
+    if(currentVideoIndex === -1) return;
+    const meta = allVideosMeta[currentVideoIndex];
+    const a = document.createElement('a');
+    a.href = meta.url;
+    a.download = meta.path;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast('Descarga iniciada');
+}
+
+function openInNewTab() {
+    const meta = allVideosMeta[currentVideoIndex];
+    window.open(meta.url, '_blank');
+}
+
+// Cargar video desde URL ?v=
+function loadFromUrlParam() {
+    const params = new URLSearchParams(location.search);
+    const v = params.get('v');
+    if(v) {
+        const idx = allVideos.findIndex(u => u === v);
+        if(idx !== -1) {
+            playVideo(idx);
+            return true;
+        }
+    }
+    return false;
+}
+
+// ================================================================
+// MODAL ME GUSTARON
+// ================================================================
+function openLikedModal() {
+    closeModal('modal-profile');
+    const likes = getLocal('me_gustan');
+    document.getElementById('liked-count').textContent = likes.length;
+    const list = document.getElementById('liked-list');
+    list.innerHTML = '';
+
+    if(likes.length === 0) {
+        list.innerHTML = '<div class="empty-state">No has dado like a ningún video</div>';
+    } else {
+        likes.forEach((idx, i) => {
+            const meta = allVideosMeta[idx];
+            if(!meta) return;
+            const item = document.createElement('div');
+            item.className = 'video-list-item';
+            item.innerHTML = `
+                <div class="thumb" style="background-image:url('${POSTER_URL}')"></div>
+                <div class="info">
+                    <div class="name">${meta.path}</div>
+                    <div class="meta">${meta.host}</div>
+                </div>
+                <button class="action-btn">▶</button>
+            `;
+            item.querySelector('.action-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                openMiniPlayer(likes, i);
+            });
+            item.addEventListener('click', () => openMiniPlayer(likes, i));
+            list.appendChild(item);
+        });
+    }
+    openModal('modal-liked');
+}
+
+// ================================================================
+// MODAL NO VER
+// ================================================================
+function openHiddenModal() {
+    closeModal('modal-profile');
+    const noVer = getLocal('no_ver');
+    document.getElementById('hidden-count').textContent = noVer.length;
+    const list = document.getElementById('hidden-list');
+    list.innerHTML = '';
+
+    if(noVer.length === 0) {
+        list.innerHTML = '<div class="empty-state">No hay videos ocultos</div>';
+    } else {
+        noVer.forEach((idx) => {
+            const meta = allVideosMeta[idx];
+            if(!meta) return;
+            const item = document.createElement('div');
+            item.className = 'video-list-item';
+            item.innerHTML = `
+                <div class="thumb" style="background-image:url('${POSTER_URL}')"></div>
+                <div class="info">
+                    <div class="name">${meta.path}</div>
+                    <div class="meta">${meta.host}</div>
+                </div>
+                <button class="action-btn">↩ Volver a ver</button>
+            `;
+            item.querySelector('.action-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                let arr = getLocal('no_ver');
+                arr = arr.filter(i => i !== idx);
+                setLocal('no_ver', arr);
+                item.remove();
+                document.getElementById('hidden-count').textContent = arr.length;
+                showToast('Video restaurado');
+            });
+            list.appendChild(item);
+        });
+    }
+    openModal('modal-hidden');
+}
+
+// ================================================================
+// MINI PLAYER (para listas de likes)
+// ================================================================
+let miniPlayerList = [];
+let miniPlayerIdx = 0;
+let miniTouchStartX = 0;
+
+function openMiniPlayer(list, startIdx) {
+    miniPlayerList = list;
+    miniPlayerIdx = startIdx;
+    loadMiniVideo();
+    openModal('modal-player');
+}
+
+function loadMiniVideo() {
+    const idx = miniPlayerList[miniPlayerIdx];
+    const meta = allVideosMeta[idx];
+    const mp = document.getElementById('mini-player');
+    document.getElementById('mp-title').textContent = `${miniPlayerIdx + 1}/${miniPlayerList.length} · ${meta.path}`;
+    mp.src = meta.url;
+    mp.muted = getSetting('mute_global') === 'true';
+    mp.play().catch(()=>{});
+}
+
+const miniOverlay = document.getElementById('gesture-overlay-mini');
+miniOverlay.addEventListener('touchstart', (e) => { miniTouchStartX = e.touches[0].clientX; }, {passive:true});
+miniOverlay.addEventListener('touchend', (e) => {
+    const dx = e.changedTouches[0].clientX - miniTouchStartX;
+    if(Math.abs(dx) > 60) {
+        if(dx < 0 && miniPlayerIdx < miniPlayerList.length - 1) {
+            miniPlayerIdx++;
+            loadMiniVideo();
+        } else if(dx > 0 && miniPlayerIdx > 0) {
+            miniPlayerIdx--;
+            loadMiniVideo();
+        }
+    }
+});
+
+// ================================================================
+// CONFIGURACIÓN (TOGGLES)
+// ================================================================
+function openSettingsModal() {
+    closeModal('modal-profile');
+    // Estado inicial de toggles
+    const m = document.getElementById('toggle-mute');
+    const a = document.getElementById('toggle-autoplay');
+    m.classList.toggle('on', getSetting('mute_global') === 'true');
+    a.classList.toggle('on', getSetting('autoplay_next') === 'true');
+    openModal('modal-settings');
+}
+
+function toggleSetting(key, itemEl) {
+    const current = getSetting(key) === 'true';
+    const newVal = !current;
+    localStorage.setItem(key, String(newVal));
+    const toggleEl = itemEl.querySelector('.toggle');
+    toggleEl.classList.toggle('on', newVal);
+
+    if(key === 'mute_global') player.muted = newVal;
+    showToast(newVal ? 'Activado' : 'Desactivado');
+}
+
+// ================================================================
+// RESPALDO (CryptoJS)
+// ================================================================
+function openBackupModal() {
+    closeModal('modal-profile');
+    openModal('modal-backup');
+}
+
+function exportBackup() {
+    const pw = document.getElementById('bk-password').value;
+    if(!pw) { showToast('Ingresa una contraseña'); return; }
+
+    const data = {};
+    if(document.getElementById('bk-likes').checked) data.me_gustan = getLocal('me_gustan');
+    if(document.getElementById('bk-hidden').checked) data.no_ver = getLocal('no_ver');
+    if(document.getElementById('bk-broken').checked) data.rotos = getLocal('rotos');
+
+    const json = JSON.stringify(data);
+    const encrypted = CryptoJS.AES.encrypt(json, pw).toString();
+
+    const blob = new Blob([encrypted], {type:'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `respaldo_${Date.now()}.enc`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Respaldo exportado');
+}
+
+function importBackup(event) {
+    const file = event.target.files[0];
+    if(!file) return;
+    const pw = document.getElementById('bk-password').value;
+    if(!pw) { showToast('Ingresa la contraseña'); event.target.value = ''; return; }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const bytes = CryptoJS.AES.decrypt(e.target.result, pw);
+            const json = bytes.toString(CryptoJS.enc.Utf8);
+            if(!json) throw new Error('Contraseña incorrecta');
+
+            const data = JSON.parse(json);
+            if(data.me_gustan) setLocal('me_gustan', data.me_gustan);
+            if(data.no_ver) setLocal('no_ver', data.no_ver);
+            if(data.rotos) setLocal('rotos', data.rotos);
+
+            showToast('Respaldo importado ✓');
+            closeModal('modal-backup');
+            btnLike.classList.toggle('liked', getLocal('me_gustan').includes(currentVideoIndex));
+        } catch(err) {
+            showToast('Error: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+}
+
+// ================================================================
+// INFO
+// ================================================================
+function openInfoModal() {
+    closeModal('modal-profile');
+    openModal('modal-info');
+}
+
+// ================================================================
+// ANUNCIO INTERSTITIAL (CADA 5 VIDEOS)
+// ================================================================
+function showInterstitial(callback) {
+    const inter = document.getElementById('interstitial');
+    const skipBtn = document.getElementById('skip-btn');
+    const countEl = document.getElementById('skip-count');
+    let countdown = 5;
+
+    inter.classList.add('active');
+    skipBtn.disabled = true;
+    countEl.textContent = countdown;
+
+    const iv = setInterval(() => {
+        countdown--;
+        countEl.textContent = countdown;
+        if(countdown <= 0) {
+            clearInterval(iv);
+            skipBtn.disabled = false;
+            skipBtn.innerHTML = 'Saltar anuncio';
+        }
+    }, 1000);
+
+    skipBtn.onclick = () => {
+        inter.classList.remove('active');
+        clearInterval(iv);
+        if(callback) callback();
+    };
+}
+
+// ================================================================
+// INICIO
+// ================================================================
+if(!loadFromUrlParam()) {
+    playNext();
+}
+</script>
+</body>
+</html>
+
+</HTML>
